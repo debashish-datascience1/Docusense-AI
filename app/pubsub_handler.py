@@ -51,7 +51,8 @@ def _mock_worker() -> None:
 class PubSubHandler:
     def __init__(self):
         settings = get_settings()
-        self.mock = settings.vertex_ai_mock
+        # In-memory queue in mock mode AND in AI-Studio-key mode (no GCP project)
+        self.mock = settings.use_local_infra
         self.project_id = settings.gcp_project_id
         self.topic_name = settings.pubsub_topic
         self.subscription_name = settings.pubsub_subscription

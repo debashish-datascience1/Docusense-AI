@@ -178,7 +178,12 @@ def extract_text(raw: bytes, filename: str) -> str:
         from PyPDF2 import PdfReader
 
         reader = PdfReader(BytesIO(raw))
-        return "\n\n".join(page.extract_text() or "" for page in reader.pages)
+        # PyPDF2 often emits a newline between every word; collapse runs of
+        # whitespace per page so chunks and citation snippets read normally.
+        pages = (
+            " ".join((page.extract_text() or "").split()) for page in reader.pages
+        )
+        return "\n\n".join(p for p in pages if p)
     return raw.decode("utf-8", errors="replace")
 
 

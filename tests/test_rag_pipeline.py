@@ -60,6 +60,26 @@ def test_mock_stream_answer():
     assert streamed.strip() == "Mock answer: What is X?"
 
 
+def test_ai_studio_key_selects_local_infra(monkeypatch, tmp_path):
+    """GEMINI_API_KEY mode: real AI backend, but GCS/PubSub stay local."""
+    monkeypatch.setenv("VERTEX_AI_MOCK", "false")
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key-for-config-test")
+    config.get_settings.cache_clear()
+    try:
+        settings = config.get_settings()
+        assert settings.ai_backend == "ai_studio"
+        assert settings.use_local_infra is True
+
+        # GCS handler must write locally, never touch google-cloud-storage
+        from app.gcs_handler import GCSHandler
+
+        handler = GCSHandler()
+        handler.upload_bytes("probe/file.txt", b"hello")
+        assert handler.download_bytes("probe/file.txt") == b"hello"
+    finally:
+        config.get_settings.cache_clear()
+
+
 # --------------------------------------------------------------------- #
 # FAISS vector store                                                      #
 # --------------------------------------------------------------------- #

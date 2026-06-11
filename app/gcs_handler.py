@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 class GCSHandler:
     def __init__(self, bucket_name: str | None = None):
         settings = get_settings()
-        self.mock = settings.vertex_ai_mock
+        # Local storage in mock mode AND in AI-Studio-key mode (no GCP project)
+        self.mock = settings.use_local_infra
         self.bucket_name = bucket_name or settings.gcs_bucket
         if self.mock:
             self._root = Path(settings.local_storage_dir)

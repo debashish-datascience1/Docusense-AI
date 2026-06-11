@@ -32,13 +32,14 @@ MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
 async def lifespan(app: FastAPI):
     settings = get_settings()
     pipeline = get_pipeline()
-    # Mock mode always processes via the in-memory queue worker. In real mode
-    # a pull subscriber is opt-in; Cloud Run should use /pubsub/push instead.
-    if settings.vertex_ai_mock or settings.enable_pull_subscriber:
+    # Local-infra modes (mock / AI Studio key) process via the in-memory queue
+    # worker. With real Pub/Sub a pull subscriber is opt-in; Cloud Run should
+    # use the push endpoint instead.
+    if settings.use_local_infra or settings.enable_pull_subscriber:
         pipeline.pubsub.start_subscriber(pipeline.process_ingestion_job)
     logger.info(
-        "DocuSense API started (mock=%s, vector_backend=%s)",
-        settings.vertex_ai_mock,
+        "DocuSense API started (ai_backend=%s, vector_backend=%s)",
+        settings.ai_backend,
         settings.vector_backend,
     )
     yield
@@ -59,6 +60,7 @@ def health() -> dict:
     return {
         "status": "ok",
         "mock": settings.vertex_ai_mock,
+        "ai_backend": settings.ai_backend,
         "vector_backend": settings.vector_backend,
     }
 

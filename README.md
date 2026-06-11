@@ -1,12 +1,23 @@
 # 📄 DocuSense AI
 
 A GCP-native **agentic RAG system**: upload PDF/text documents, ask questions in
-natural language, get streaming answers from **Gemini 1.5 Flash** grounded in
-your documents — with source citations and confidence scores.
+natural language, get streaming answers from **Gemini** grounded in your
+documents — with source citations and confidence scores.
 
-> 💡 **Zero-GCP local mode:** set `VERTEX_AI_MOCK=true` and the whole stack
-> (API, UI, ingestion, retrieval, tests) runs on your laptop with no Google
-> Cloud account at all. See [Local development](#3-local-development-no-gcp-needed).
+### Run modes
+
+The same codebase runs in three modes, selected purely by env vars
+(`GET /health` reports which one is active as `ai_backend`):
+
+| Mode | Select with | Embeddings / LLM | Storage & queue | Needs |
+|---|---|---|---|---|
+| **Mock** | `VERTEX_AI_MOCK=true` | Seeded fake vectors / `"Mock answer: ..."` | Local `/tmp` + in-memory queue | Nothing |
+| **AI Studio** (free) | `GEMINI_API_KEY=<key>` | `gemini-embedding-001` / `gemini-2.5-flash` via the free Gemini API | Local `/tmp` + in-memory queue | API key only — no billing |
+| **Vertex AI** (production) | neither of the above | `text-embedding-004` / `gemini-1.5-flash` via Vertex AI | GCS + Pub/Sub | GCP project with billing |
+
+> ⚠️ When switching modes, clear the local index/storage first
+> (`rm -rf /tmp/docusense`) — vectors from different embedding models (or mock
+> vectors) must not be mixed in one index.
 
 ---
 
@@ -45,11 +56,16 @@ your documents — with source citations and confidence scores.
 1. **Ingest** — `POST /ingest` uploads the raw file to GCS, records a job, and
    publishes a Pub/Sub message.
 2. **Process** — the Pub/Sub subscriber (or push endpoint) downloads the file,
-   extracts text, chunks it (512 tokens, 50 overlap), embeds chunks with
-   `text-embedding-004`, and upserts vectors into FAISS / Matching Engine.
+   extracts text, chunks it (512 tokens, 50 overlap), embeds chunks with the
+   active mode's embedding model, and upserts vectors into FAISS / Matching
+   Engine.
 3. **Ask** — `POST /ask` embeds the question, retrieves the top-k chunks,
-   builds a grounded prompt, and streams Gemini 1.5 Flash's answer back as
-   NDJSON (sources first, then tokens).
+   builds a grounded prompt, and streams Gemini's answer back as NDJSON
+   (sources first, then tokens).
+
+*The diagram above shows the full Vertex AI production deployment; in mock and
+AI Studio modes the GCS/Pub/Sub boxes are replaced by local storage and an
+in-memory queue, and no Cloud Run is involved.*
 
 ### What each GCP service does here
 
@@ -117,6 +133,26 @@ pytest tests/ -v
 Open <http://localhost:8501>, upload a PDF or text file from the sidebar, and
 chat with it. Answers will be mocked, but the full pipeline — upload → GCS →
 Pub/Sub → chunk → embed → FAISS → retrieve → stream — actually runs.
+
+### Free real-AI mode (API key, no billing!)
+
+If you can't (or don't want to) set up GCP billing yet, Google AI Studio
+serves Gemini on a free tier with just an API key. Note it carries different
+model generations than Vertex AI (`text-embedding-004` and the 1.5 series are
+retired there), so this mode uses `gemini-embedding-001` (truncated to 768
+dims to match the index) and `gemini-2.5-flash`:
+
+1. Create a key at <https://aistudio.google.com/apikey> (any Google account,
+   no billing needed).
+2. Run the backend with the key:
+   ```bash
+   GEMINI_API_KEY=<your-key> uvicorn app.main:app --port 8080
+   ```
+
+Real embeddings + real Gemini answers; documents and the ingestion queue stay
+local (like mock mode) since there's no GCP project involved. Check which
+backend is active at any time via `GET /health` (`"ai_backend": "mock" |
+"ai_studio" | "vertex"`).
 
 To run locally **against real GCP** instead (after `setup_gcp.sh`):
 
@@ -188,6 +224,8 @@ All settings are env vars (see [app/config.py](app/config.py)). Key ones:
 | Variable | Default | Purpose |
 |---|---|---|
 | `VERTEX_AI_MOCK` | `false` | `true` = fully local, zero GCP |
+| `GEMINI_API_KEY` | — | Set to use the free AI Studio tier (real models, no billing/GCP project) |
+| `AI_STUDIO_EMBEDDING_MODEL` / `AI_STUDIO_GENERATION_MODEL` | `gemini-embedding-001` / `gemini-2.5-flash` | Models used in AI Studio mode |
 | `GCP_PROJECT_ID` / `GCP_LOCATION` | — / `us-central1` | Vertex AI + GCS + Pub/Sub project |
 | `VECTOR_BACKEND` | `faiss` | `faiss` or `matching_engine` |
 | `GCS_BUCKET` | `docusense-documents` | Document/job storage bucket |

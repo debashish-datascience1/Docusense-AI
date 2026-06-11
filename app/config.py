@@ -23,9 +23,21 @@ class Settings(BaseSettings):
     # --- Mock mode: run everything locally with zero GCP dependencies ------
     vertex_ai_mock: bool = False
 
+    # --- Google AI Studio API key (free tier, no billing/GCP project) ------
+    # When set (and not in mock mode), Gemini + embeddings are called via
+    # this key instead of Vertex AI, and GCS/PubSub fall back to local
+    # equivalents. Get a key at https://aistudio.google.com/apikey
+    gemini_api_key: str = ""
+
     # --- Vertex AI models ---------------------------------------------------
     embedding_model: str = "text-embedding-004"
     generation_model: str = "gemini-1.5-flash"
+
+    # --- AI Studio models -----------------------------------------------------
+    # The free Gemini API retired text-embedding-004 (Jan 2026) and the 1.5
+    # series; these are their supported successors on that endpoint.
+    ai_studio_embedding_model: str = "gemini-embedding-001"
+    ai_studio_generation_model: str = "gemini-2.5-flash"
 
     # --- Vector store -------------------------------------------------------
     # "faiss" (local index, default) or "matching_engine" (Vertex AI, prod)
@@ -59,6 +71,22 @@ class Settings(BaseSettings):
     api_port: int = 8080
     # Where the Streamlit UI finds the FastAPI backend
     backend_url: str = "http://localhost:8080"
+
+    @property
+    def use_local_infra(self) -> bool:
+        """True when GCS/PubSub should be replaced by local equivalents.
+
+        Mock mode and AI-Studio-key mode both run without a GCP project.
+        """
+        return self.vertex_ai_mock or bool(self.gemini_api_key)
+
+    @property
+    def ai_backend(self) -> str:
+        if self.vertex_ai_mock:
+            return "mock"
+        if self.gemini_api_key:
+            return "ai_studio"
+        return "vertex"
 
 
 @lru_cache

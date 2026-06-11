@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/bin/python -c \"from google import genai; print\\('google-genai import OK'\\)\")"
+    ]
+  }
+}

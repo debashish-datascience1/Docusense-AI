@@ -1,9 +1,13 @@
-"""Vertex AI wrapper: text-embedding-004 embeddings + Gemini 1.5 Flash generation.
+"""Gemini wrapper: text-embedding-004 embeddings + Gemini 1.5 Flash generation.
 
-When VERTEX_AI_MOCK=true this client returns deterministic fake responses
-(seeded random embeddings, "Mock answer: ..." generations) so the entire
-stack runs and is testable without any GCP credentials. All google-cloud
-imports are lazy so mock mode never touches the GCP SDKs.
+Three backends, selected from settings (see config.ai_backend):
+  - "vertex"    Vertex AI via ADC credentials (production; default)
+  - "ai_studio" Google AI Studio via GEMINI_API_KEY (free tier, no billing;
+                same models, different endpoint)
+  - "mock"      VERTEX_AI_MOCK=true: deterministic fake responses so the
+                entire stack runs and is testable with no Google account
+
+All google imports are lazy so each mode only touches its own SDK.
 """
 
 import functools
@@ -66,14 +70,24 @@ class VertexClient:
 
     def __init__(self, project_id: str | None = None, location: str | None = None):
         settings = get_settings()
-        self.mock = settings.vertex_ai_mock
+        self.backend = settings.ai_backend
+        self.mock = self.backend == "mock"
         self.project_id = project_id or settings.gcp_project_id
         self.location = location or settings.gcp_location
         self.embedding_model_name = settings.embedding_model
         self.generation_model_name = settings.generation_model
         self._embedding_model = None
         self._generative_model = None
-        if not self.mock:
+        self._genai_client = None
+        if self.backend == "ai_studio":
+            from google import genai
+
+            # The free Gemini API serves different model generations than
+            # Vertex AI (text-embedding-004 / gemini-1.5-flash are retired there)
+            self.embedding_model_name = settings.ai_studio_embedding_model
+            self.generation_model_name = settings.ai_studio_generation_model
+            self._genai_client = genai.Client(api_key=settings.gemini_api_key)
+        elif self.backend == "vertex":
             import vertexai
 
             vertexai.init(project=self.project_id, location=self.location)
@@ -95,6 +109,18 @@ class VertexClient:
 
     @retry_with_backoff()
     def _embed_batch(self, batch: list[str]) -> list[list[float]]:
+        if self.backend == "ai_studio":
+            from google.genai import types
+
+            # gemini-embedding-001 defaults to 3072 dims; truncate to 768 to
+            # match the index. Truncated vectors must be re-normalized, which
+            # the FAISS store does on both upsert and query.
+            result = self._genai_client.models.embed_content(
+                model=self.embedding_model_name,
+                contents=batch,
+                config=types.EmbedContentConfig(output_dimensionality=EMBEDDING_DIM),
+            )
+            return [list(emb.values) for emb in result.embeddings]
         model = self._get_embedding_model()
         return [emb.values for emb in model.get_embeddings(batch)]
 
@@ -125,8 +151,13 @@ class VertexClient:
         """Answer a question grounded in the given context. Blocking version."""
         if self.mock:
             return f"Mock answer: {question}"
-        model = self._get_generative_model()
         prompt = PROMPT_TEMPLATE.format(context=context, question=question)
+        if self.backend == "ai_studio":
+            response = self._genai_client.models.generate_content(
+                model=self.generation_model_name, contents=prompt
+            )
+            return response.text
+        model = self._get_generative_model()
         response = model.generate_content(prompt)
         return response.text
 
@@ -136,8 +167,14 @@ class VertexClient:
             for word in f"Mock answer: {question}".split(" "):
                 yield word + " "
             return
-        model = self._get_generative_model()
         prompt = PROMPT_TEMPLATE.format(context=context, question=question)
+        if self.backend == "ai_studio":
+            stream = self._start_ai_studio_stream(prompt)
+            for chunk in stream:
+                if chunk.text:
+                    yield chunk.text
+            return
+        model = self._get_generative_model()
         for chunk in self._start_stream(model, prompt):
             # Chunks without candidates (e.g. final usage metadata) have no .text
             try:
@@ -149,6 +186,12 @@ class VertexClient:
     @retry_with_backoff()
     def _start_stream(self, model, prompt: str):
         return model.generate_content(prompt, stream=True)
+
+    @retry_with_backoff()
+    def _start_ai_studio_stream(self, prompt: str):
+        return self._genai_client.models.generate_content_stream(
+            model=self.generation_model_name, contents=prompt
+        )
 
     def _get_generative_model(self):
         if self._generative_model is None:

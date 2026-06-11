@@ -218,6 +218,6 @@ class MatchingEngineVectorStore(VectorStore):
 @lru_cache
 def get_vector_store() -> VectorStore:
     settings = get_settings()
-    if settings.vector_backend == "matching_engine" and not settings.vertex_ai_mock:
+    if settings.vector_backend == "matching_engine" and not settings.use_local_infra:
         return MatchingEngineVectorStore()
     return FaissVectorStore()
