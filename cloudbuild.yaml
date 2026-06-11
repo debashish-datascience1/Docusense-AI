@@ -1,0 +1,61 @@
+# Cloud Build pipeline: test -> build -> push -> deploy to Cloud Run
+#
+# Trigger manually with:
+#   gcloud builds submit --config cloudbuild.yaml .
+
+substitutions:
+  _REGION: us-central1
+  _REPO: docusense          # Artifact Registry repository name
+  _SERVICE: docusense-api
+
+steps:
+  # 1. Run the test suite in mock mode (no GCP services touched)
+  - id: test
+    name: python:3.11-slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        pip install --quiet -r requirements.txt
+        VERTEX_AI_MOCK=true pytest tests/ -v
+
+  # 2. Build the container image
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$COMMIT_SHA
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest
+      - .
+
+  # 3. Push it to Artifact Registry
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - --all-tags
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}
+
+  # 4. Deploy to Cloud Run
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$COMMIT_SHA
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated
+      - --memory=1Gi
+      - --set-env-vars=GCP_PROJECT_ID=$PROJECT_ID,GCP_LOCATION=${_REGION},VERTEX_AI_MOCK=false,GCS_BUCKET=$PROJECT_ID-docusense-documents,PUBSUB_TOPIC=docusense-ingest,PUBSUB_SUBSCRIPTION=docusense-ingest-sub
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$COMMIT_SHA
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY
