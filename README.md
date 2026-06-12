@@ -214,6 +214,7 @@ Then run the UI anywhere with `BACKEND_URL=https://<cloud-run-url>`.
 | `GET` | `/job/{job_id}` | Job status: `queued` → `processing` → `done`/`failed` |
 | `POST` | `/ask` | `{"question": "...", "top_k": 5, "stream": true}` → NDJSON stream (`sources`, `token`×N, `done`); `"stream": false` → plain JSON |
 | `GET` | `/documents` | All ingested documents with status + chunk counts |
+| `DELETE` | `/documents/{job_id}` | Remove a document: its chunks, file, and job record |
 | `GET` | `/health` | Health check (used by the container HEALTHCHECK) |
 | `POST` | `/pubsub/push` | Pub/Sub push delivery target (production ingestion) |
 

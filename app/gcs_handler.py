@@ -59,6 +59,20 @@ class GCSHandler:
             return (self._root / path).read_bytes()
         return self._bucket.blob(path).download_as_bytes()
 
+    def delete_file(self, path: str) -> bool:
+        """Delete an object; returns False if it didn't exist."""
+        if self.mock:
+            target = self._root / path
+            if not target.exists():
+                return False
+            target.unlink()
+            return True
+        blob = self._bucket.blob(path)
+        if not blob.exists():
+            return False
+        blob.delete()
+        return True
+
     def exists(self, path: str) -> bool:
         if self.mock:
             return (self._root / path).exists()

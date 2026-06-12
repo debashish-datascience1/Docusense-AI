@@ -42,6 +42,10 @@ class VectorStore(abc.ABC):
         """Return the top_k most similar chunks."""
 
     @abc.abstractmethod
+    def delete(self, ids: list[str]) -> int:
+        """Remove chunks by id. Returns the number of vectors removed."""
+
+    @abc.abstractmethod
     def count(self) -> int:
         """Number of chunks currently indexed."""
 
@@ -130,6 +134,35 @@ class FaissVectorStore(VectorStore):
                 )
             return results
 
+    def delete(self, ids: list[str]) -> int:
+        """Remove chunks by rebuilding the index without them.
+
+        IndexFlatIP has no native deletion, but it stores raw vectors, so the
+        survivors can be reconstructed. Fine at document scale; a swap to
+        IndexIDMap would be needed if indexes grow to millions of vectors.
+        """
+        import faiss
+
+        targets = set(ids)
+        with self._lock:
+            keep = [i for i, cid in enumerate(self._ids) if cid not in targets]
+            removed = self._index.ntotal - len(keep)
+            if removed == 0:
+                return 0
+            new_index = faiss.IndexFlatIP(self.dim)
+            if keep:
+                matrix = np.vstack(
+                    [self._index.reconstruct(i) for i in keep]
+                ).astype("float32")
+                new_index.add(matrix)
+            self._ids = [self._ids[i] for i in keep]
+            self._metadata = {
+                cid: meta for cid, meta in self._metadata.items() if cid not in targets
+            }
+            self._index = new_index
+            self._persist()
+            return removed
+
     def count(self) -> int:
         return self._index.ntotal
 
@@ -209,6 +242,17 @@ class MatchingEngineVectorStore(VectorStore):
                 )
             )
         return results
+
+    def delete(self, ids: list[str]) -> int:
+        if not ids:
+            return 0
+        self._index.remove_datapoints(datapoint_ids=ids)
+        for chunk_id in ids:
+            try:
+                self._gcs.delete_file(f"chunks/{chunk_id}.json")
+            except Exception:
+                logger.warning("Could not delete chunk payload %s", chunk_id)
+        return len(ids)
 
     def count(self) -> int:
         # Matching Engine exposes no cheap count; -1 signals "unknown"

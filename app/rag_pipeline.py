@@ -97,6 +97,25 @@ class RAGPipeline:
             return None
         return self.gcs.download_json(path)
 
+    def delete_document(self, job_id: str) -> dict | None:
+        """Remove a document: its chunks from the index, its file and job record.
+
+        Returns a summary dict, or None if the job_id is unknown.
+        """
+        job = self.get_job_status(job_id)
+        if job is None:
+            return None
+        # Chunk ids are deterministic ({job_id}-{i}), so the job record is
+        # enough to address every vector this document produced.
+        ids = [f"{job_id}-{i}" for i in range(int(job.get("chunks", 0)))]
+        removed = self.store.delete(ids) if ids else 0
+        filename = job.get("filename", "")
+        if filename:
+            self.gcs.delete_file(f"uploads/{job_id}/{filename}")
+        self.gcs.delete_file(f"jobs/{job_id}.json")
+        logger.info("Deleted document %s (%s): %d chunks", job_id, filename, removed)
+        return {"job_id": job_id, "filename": filename, "removed_chunks": removed}
+
     def list_documents(self) -> list[dict]:
         """All ingestion jobs with their status (the de-facto document registry)."""
         docs = []

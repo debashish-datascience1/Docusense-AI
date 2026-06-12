@@ -96,7 +96,15 @@ with st.sidebar:
         label = f"{icon} {doc.get('filename', '?')}"
         if doc.get("status") == "done":
             label += f" ({doc.get('chunks', '?')} chunks)"
-        st.write(label)
+        name_col, delete_col = st.columns([5, 1])
+        name_col.write(label)
+        if delete_col.button("🗑", key=f"delete-{doc['job_id']}", help="Delete document"):
+            response = httpx.delete(
+                f"{BACKEND_URL}/documents/{doc['job_id']}", timeout=30
+            )
+            if response.status_code == 200:
+                st.toast(f"Deleted {doc.get('filename', '?')}")
+            st.rerun()
         if doc.get("status") == "failed":
             st.caption(f"Error: {doc.get('error', 'unknown')}")
 

@@ -111,6 +111,14 @@ def documents() -> dict:
     return {"documents": get_pipeline().list_documents()}
 
 
+@app.delete("/documents/{job_id}")
+def delete_document(job_id: str) -> dict:
+    result = get_pipeline().delete_document(job_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Unknown job {job_id}")
+    return result
+
+
 @app.post("/pubsub/push", status_code=204)
 async def pubsub_push(request: Request) -> None:
     """Pub/Sub push subscription target: processes one ingestion job."""

@@ -178,6 +178,35 @@ def test_failed_job_records_error():
     assert "error" in job
 
 
+def test_delete_document():
+    pipeline = _make_pipeline()
+    job_id = pipeline.ingest_document(b"Deletable content about llamas.", "del.txt")
+    pipeline.process_ingestion_job(job_id)
+    assert pipeline.store.count() > 0
+
+    result = pipeline.delete_document(job_id)
+    assert result["removed_chunks"] >= 1
+    assert pipeline.store.count() == 0
+    assert pipeline.get_job_status(job_id) is None
+    assert pipeline.list_documents() == []
+    # Deleting again reports unknown
+    assert pipeline.delete_document(job_id) is None
+
+
+def test_delete_only_targets_one_document():
+    pipeline = _make_pipeline()
+    keep_id = pipeline.ingest_document(b"Keep me: facts about oceans.", "keep.txt")
+    pipeline.process_ingestion_job(keep_id)
+    drop_id = pipeline.ingest_document(b"Drop me: facts about deserts.", "drop.txt")
+    pipeline.process_ingestion_job(drop_id)
+
+    pipeline.delete_document(drop_id)
+    remaining = pipeline.list_documents()
+    assert [d["filename"] for d in remaining] == ["keep.txt"]
+    result = pipeline.answer_question("oceans?")
+    assert all(s["filename"] == "keep.txt" for s in result["sources"])
+
+
 def test_chunking_long_document():
     pipeline = _make_pipeline()
     long_text = ("Sentence number %d about testing. " * 500) % tuple(range(500))
@@ -248,6 +277,24 @@ def test_api_ingest_then_ask(client):
     body = response.json()
     assert body["answer"] == "Mock answer: Where is the launch code?"
     assert body["sources"]
+
+
+def test_api_delete_document(client):
+    response = client.post(
+        "/ingest", files={"file": ("temp.txt", b"Temporary document for deletion.")}
+    )
+    job_id = response.json()["job_id"]
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        if client.get(f"/job/{job_id}").json()["status"] in ("done", "failed"):
+            break
+        time.sleep(0.05)
+
+    response = client.delete(f"/documents/{job_id}")
+    assert response.status_code == 200
+    assert response.json()["job_id"] == job_id
+    assert client.delete(f"/documents/{job_id}").status_code == 404
+    assert client.get("/documents").json()["documents"] == []
 
 
 def test_api_ask_streaming(client):
