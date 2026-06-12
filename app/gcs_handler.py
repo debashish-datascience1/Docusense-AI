@@ -12,6 +12,7 @@ Bucket layout:
 
 import json
 import logging
+import uuid
 from pathlib import Path
 
 from app.config import get_settings
@@ -44,9 +45,10 @@ class GCSHandler:
         if self.mock:
             target = self._root / path
             target.parent.mkdir(parents=True, exist_ok=True)
-            # Atomic write: job-status files are polled by other threads while
-            # the subscriber worker rewrites them, mirroring GCS atomicity.
-            tmp = target.with_suffix(target.suffix + ".tmp")
+            # Atomic write mirroring GCS semantics: job-status files are
+            # polled and rewritten by concurrent threads. The temp name must
+            # be unique per writer or two simultaneous writers race on it.
+            tmp = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
             tmp.write_bytes(data)
             tmp.replace(target)
             return f"local://{target}"

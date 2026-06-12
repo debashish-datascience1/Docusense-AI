@@ -4,7 +4,9 @@
       "Bash(.venv/bin/python -c \"from google import genai; print\\('google-genai import OK'\\)\")",
       "Bash(VERTEX_AI_MOCK=true .venv/bin/python -m pytest tests/ -q)",
       "Bash(.venv/bin/python -m py_compile ui/streamlit_app.py app/*.py)",
-      "Bash(.venv/bin/python -c \"import yaml; yaml.safe_load\\(open\\('.github/workflows/ci.yml'\\)\\); print\\('ci.yml valid'\\)\")"
+      "Bash(.venv/bin/python -c \"import yaml; yaml.safe_load\\(open\\('.github/workflows/ci.yml'\\)\\); print\\('ci.yml valid'\\)\")",
+      "Bash(.venv/bin/pytest tests/ -q)",
+      "Bash(.venv/bin/pytest tests/test_rag_pipeline.py::test_api_ask_streaming -q)"
     ]
   }
 }
