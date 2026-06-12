@@ -98,10 +98,20 @@ def ask(request: AskRequest):
         return pipeline.answer_question(request.question, top_k=request.top_k)
 
     def event_stream():
-        for event in pipeline.stream_answer_events(
-            request.question, top_k=request.top_k
-        ):
-            yield json.dumps(event) + "\n"
+        # Once streaming starts the 200 is already sent, so failures can't
+        # become an HTTP error status — surface them as an NDJSON event
+        # instead of dropping the connection mid-body.
+        try:
+            for event in pipeline.stream_answer_events(
+                request.question, top_k=request.top_k
+            ):
+                yield json.dumps(event) + "\n"
+        except Exception as exc:
+            logger.exception("Streaming answer failed")
+            yield json.dumps(
+                {"type": "error", "message": f"{type(exc).__name__}: {exc}"}
+            ) + "\n"
+            yield json.dumps({"type": "done"}) + "\n"
 
     return StreamingResponse(event_stream(), media_type="application/x-ndjson")
 

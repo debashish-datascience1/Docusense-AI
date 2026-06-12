@@ -297,6 +297,32 @@ def test_api_delete_document(client):
     assert client.get("/documents").json()["documents"] == []
 
 
+def test_api_stream_failure_reported_as_error_event(client, monkeypatch):
+    """A mid-stream failure must yield an NDJSON error event, not a dropped
+    connection (the 200 is already sent once streaming starts)."""
+    import json as jsonlib
+
+    pipeline = rag_pipeline.get_pipeline()
+    job_id = pipeline.ingest_document(b"Some indexed content.", "err.txt")
+    pipeline.process_ingestion_job(job_id)
+
+    def exploding_stream(context, question):
+        yield "partial "
+        raise RuntimeError("upstream exploded")
+
+    monkeypatch.setattr(pipeline.vertex, "stream_answer", exploding_stream)
+
+    with client.stream(
+        "POST", "/ask", json={"question": "boom?", "stream": True}
+    ) as response:
+        assert response.status_code == 200
+        events = [jsonlib.loads(line) for line in response.iter_lines() if line.strip()]
+
+    error_events = [e for e in events if e["type"] == "error"]
+    assert error_events and "upstream exploded" in error_events[0]["message"]
+    assert events[-1]["type"] == "done"
+
+
 def test_api_ask_streaming(client):
     # Index something first (synchronously, via the pipeline)
     pipeline = rag_pipeline.get_pipeline()

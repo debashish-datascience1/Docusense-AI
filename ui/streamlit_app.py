@@ -136,22 +136,30 @@ if question := st.chat_input("Ask a question about your documents..."):
         sources_box: dict = {"sources": [], "confidence": 0.0}
 
         def token_stream():
-            with httpx.stream(
-                "POST",
-                f"{BACKEND_URL}/ask",
-                json={"question": question, "stream": True},
-                timeout=120,
-            ) as response:
-                response.raise_for_status()
-                for line in response.iter_lines():
-                    if not line.strip():
-                        continue
-                    event = json.loads(line)
-                    if event["type"] == "sources":
-                        sources_box["sources"] = event["sources"]
-                        sources_box["confidence"] = event["confidence"]
-                    elif event["type"] == "token":
-                        yield event["text"]
+            try:
+                with httpx.stream(
+                    "POST",
+                    f"{BACKEND_URL}/ask",
+                    json={"question": question, "stream": True},
+                    timeout=120,
+                ) as response:
+                    response.raise_for_status()
+                    for line in response.iter_lines():
+                        if not line.strip():
+                            continue
+                        event = json.loads(line)
+                        if event["type"] == "sources":
+                            sources_box["sources"] = event["sources"]
+                            sources_box["confidence"] = event["confidence"]
+                        elif event["type"] == "token":
+                            yield event["text"]
+                        elif event["type"] == "error":
+                            yield f"\n\n⚠️ **Backend error:** {event['message']}"
+            except httpx.HTTPError as exc:
+                yield (
+                    f"\n\n⚠️ **Lost connection to the backend** "
+                    f"({type(exc).__name__}). Check the API server logs and try again."
+                )
 
         answer = st.write_stream(token_stream())
         if sources_box["sources"]:
