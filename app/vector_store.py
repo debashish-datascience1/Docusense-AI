@@ -85,6 +85,7 @@ class FaissVectorStore(VectorStore):
     def _persist(self) -> None:
         import faiss
 
+        self.index_dir.mkdir(parents=True, exist_ok=True)
         faiss.write_index(self._index, str(self._index_path))
         self._meta_path.write_text(
             json.dumps({"ids": self._ids, "metadata": self._metadata})
