@@ -6,18 +6,20 @@ documents — with source citations and confidence scores.
 
 ### Run modes
 
-The same codebase runs in three modes, selected purely by env vars
-(`GET /health` reports which one is active as `ai_backend`):
+The same codebase runs in four modes, selected automatically from which keys
+are present in your `.env` file (`GET /health` reports the active backend):
 
-| Mode | Select with | Embeddings / LLM | Storage & queue | Needs |
+| Mode | Keys in `.env` | Embeddings | LLM | Storage |
 |---|---|---|---|---|
-| **Mock** | `VERTEX_AI_MOCK=true` | Seeded fake vectors / `"Mock answer: ..."` | Local `/tmp` + in-memory queue | Nothing |
-| **AI Studio** (free) | `GEMINI_API_KEY=<key>` | `gemini-embedding-001` / `gemini-2.5-flash` via the free Gemini API | Local `/tmp` + in-memory queue | API key only — no billing |
-| **Vertex AI** (production) | neither of the above | `text-embedding-004` / `gemini-1.5-flash` via Vertex AI | GCS + Pub/Sub | GCP project with billing |
+| **Mock** | `VERTEX_AI_MOCK=true` | Fake (seeded) | `"Mock answer: ..."` | `/tmp` |
+| **Groq** (free) | `GROQ_API_KEY` | `all-MiniLM-L6-v2` (local, 384-dim) | LLaMA 3.3 70B via Groq | `/tmp` |
+| **Groq + Gemini** (free) | `GROQ_API_KEY` + `GEMINI_API_KEY` | `gemini-embedding-001` (768-dim) | LLaMA 3.3 70B via Groq | `/tmp` |
+| **AI Studio** (free) | `GEMINI_API_KEY` | `gemini-embedding-001` (768-dim) | `gemini-2.5-flash` | `/tmp` |
+| **Vertex AI** (prod) | GCP ADC credentials | `text-embedding-004` (768-dim) | `gemini-1.5-flash` | GCS + Pub/Sub |
 
-> ⚠️ When switching modes, clear the local index/storage first
-> (`rm -rf /tmp/docusense`) — vectors from different embedding models (or mock
-> vectors) must not be mixed in one index.
+> ⚠️ **Switching modes changes the embedding dimension.** Run
+> `rm -rf /tmp/docusense/index` before switching so the FAISS index is rebuilt
+> at the correct size. Documents must be re-uploaded after clearing.
 
 ---
 
@@ -120,13 +122,17 @@ in-memory queue, and GCS writes to `/tmp/docusense/storage`.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# 2. Start the backend in mock mode
-VERTEX_AI_MOCK=true uvicorn app.main:app --reload --port 8080
+# 2. Create your .env (copy the example, then fill in your keys)
+cp .env.example .env
+# edit .env — add GROQ_API_KEY or GEMINI_API_KEY, or set VERTEX_AI_MOCK=true
 
-# 3. In another terminal, start the UI
+# 3. Start the backend (reads .env automatically — no keys on the command line)
+uvicorn app.main:app --reload --port 8080
+
+# 4. In another terminal, start the UI
 BACKEND_URL=http://localhost:8080 streamlit run ui/streamlit_app.py
 
-# 4. Run the tests (also fully offline)
+# 5. Run the tests (also fully offline)
 pytest tests/ -v
 ```
 
@@ -134,25 +140,25 @@ Open <http://localhost:8501>, upload a PDF or text file from the sidebar, and
 chat with it. Answers will be mocked, but the full pipeline — upload → GCS →
 Pub/Sub → chunk → embed → FAISS → retrieve → stream — actually runs.
 
-### Free real-AI mode (API key, no billing!)
+### Free real-AI options (no billing!)
 
-If you can't (or don't want to) set up GCP billing yet, Google AI Studio
-serves Gemini on a free tier with just an API key. Note it carries different
-model generations than Vertex AI (`text-embedding-004` and the 1.5 series are
-retired there), so this mode uses `gemini-embedding-001` (truncated to 768
-dims to match the index) and `gemini-2.5-flash`:
+Put your keys in `.env` — never on the command line.
 
-1. Create a key at <https://aistudio.google.com/apikey> (any Google account,
-   no billing needed).
-2. Run the backend with the key:
-   ```bash
-   GEMINI_API_KEY=<your-key> uvicorn app.main:app --port 8080
-   ```
+**Option A — Groq** (fastest free inference):
+1. Create a key at <https://console.groq.com/keys>
+2. Add to `.env`: `GROQ_API_KEY=<your-key>`
+3. Embeddings run locally via `sentence-transformers` (no extra key needed).
+   Optionally also add `GEMINI_API_KEY` to use Gemini embeddings instead
+   (better quality, same free quota).
 
-Real embeddings + real Gemini answers; documents and the ingestion queue stay
-local (like mock mode) since there's no GCP project involved. Check which
-backend is active at any time via `GET /health` (`"ai_backend": "mock" |
-"ai_studio" | "vertex"`).
+**Option B — Google AI Studio** (full Gemini stack):
+1. Create a key at <https://aistudio.google.com/apikey>
+2. Add to `.env`: `GEMINI_API_KEY=<your-key>`
+3. Uses `gemini-embedding-001` + `gemini-2.5-flash` (the 1.5 series and
+   `text-embedding-004` are retired on the free API endpoint).
+
+Then just run `uvicorn app.main:app --port 8080` — the `.env` is read
+automatically. Check which backend is active via `GET /health`.
 
 To run locally **against real GCP** instead (after `setup_gcp.sh`):
 

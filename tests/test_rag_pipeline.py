@@ -15,7 +15,7 @@ os.environ["VERTEX_AI_MOCK"] = "true"
 
 from app import config, pubsub_handler, rag_pipeline, vector_store  # noqa: E402
 from app.vector_store import FaissVectorStore  # noqa: E402
-from app.vertex_client import EMBEDDING_DIM, VertexClient  # noqa: E402
+from app.vertex_client import VertexClient  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -45,7 +45,7 @@ def test_mock_embeddings_are_deterministic():
     second = client.embed_text(["hello world", "another text"])
     assert first == second
     assert len(first) == 2
-    assert all(len(vec) == EMBEDDING_DIM for vec in first)
+    assert all(len(vec) == client.embedding_dim for vec in first)
     assert first[0] != first[1]
 
 
@@ -118,7 +118,7 @@ def test_faiss_persistence(tmp_path):
 
 def test_faiss_empty_search(tmp_path):
     store = FaissVectorStore(index_dir=str(tmp_path / "faiss"))
-    assert store.search([0.0] * EMBEDDING_DIM, top_k=5) == []
+    assert store.search([0.0] * store.dim, top_k=5) == []
 
 
 # --------------------------------------------------------------------- #
