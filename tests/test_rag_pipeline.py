@@ -61,9 +61,10 @@ def test_mock_stream_answer():
 
 
 def test_ai_studio_key_selects_local_infra(monkeypatch, tmp_path):
-    """GEMINI_API_KEY mode: real AI backend, but GCS/PubSub stay local."""
+    """GEMINI_API_KEY-only mode: AI Studio backend, local GCS/PubSub."""
     monkeypatch.setenv("VERTEX_AI_MOCK", "false")
     monkeypatch.setenv("GEMINI_API_KEY", "fake-key-for-config-test")
+    monkeypatch.setenv("GROQ_API_KEY", "")  # ensure groq doesn't take priority
     config.get_settings.cache_clear()
     try:
         settings = config.get_settings()

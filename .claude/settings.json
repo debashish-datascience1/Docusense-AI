@@ -6,7 +6,9 @@
       "Bash(.venv/bin/python -m py_compile ui/streamlit_app.py app/*.py)",
       "Bash(.venv/bin/python -c \"import yaml; yaml.safe_load\\(open\\('.github/workflows/ci.yml'\\)\\); print\\('ci.yml valid'\\)\")",
       "Bash(.venv/bin/pytest tests/ -q)",
-      "Bash(.venv/bin/pytest tests/test_rag_pipeline.py::test_api_ask_streaming -q)"
+      "Bash(.venv/bin/pytest tests/test_rag_pipeline.py::test_api_ask_streaming -q)",
+      "Bash(VERTEX_AI_MOCK=true .venv/bin/pytest tests/ -q)",
+      "Bash(.venv/bin/python -m py_compile app/vector_store.py app/vertex_client.py app/rag_pipeline.py app/main.py ui/streamlit_app.py)"
     ]
   }
 }

@@ -114,6 +114,7 @@ with st.sidebar:
 
 st.header("Ask your documents")
 
+
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
